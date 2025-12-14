@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
-	import { open } from '@tauri-apps/plugin-dialog';
+	import { open, confirm } from '@tauri-apps/plugin-dialog';
 	import { join } from '@tauri-apps/api/path';
 
 	const problemsJson = 'problems.json';
@@ -9,8 +9,8 @@
 
 	interface Problem {
 		daynote: number;
-		label: string;
-		refLabel: string;
+		shortLabel: string;
+		fullLabel: string;
 		problemType: string;
 	}
 
@@ -22,13 +22,18 @@
 		labels: string[];
 	}
 
-	let problemsJsonFile = $state('');
-	let assignmentsJsonFile = $state('');
-
-	let workingDir = $state('');
 	let typstFilePath = $state('');
 	let daynotesDir = $state('');
 	let assignmentsDir = $state('');
+
+	let workingDir = $state('');
+	const computeWorkingDir = async () => {
+		if (!typstFilePath) workingDir = '';
+		workingDir = await invoke<string>('get_parent_dir', { path: typstFilePath });
+	};
+
+	let problemsJsonFile = $derived(workingDir ? workingDir + problemsJson : '');
+	let assignmentsJsonFile = $derived(workingDir ? workingDir + assignmentsJson : '');
 
 	let problems = $state<Problem[]>([]);
 	let filteredProblems = $derived.by(() => {
@@ -42,12 +47,42 @@
 
 	let assignments = $state<Assignment[]>([]);
 
-	const emptyAssignmet = () => {
+	let creatingNewAssignment = $state(false);
+
+	let assignmentDateString = $state<string>('');
+	let assignmentDeadlineString = $state<string>('');
+	$effect(() => {
+		if (!draftAssignment) {
+			assignmentDateString = '';
+			assignmentDeadlineString = '';
+		} else {
+			assignmentDateString = Intl.DateTimeFormat('en-CA').format(draftAssignment.date);
+			assignmentDeadlineString = Intl.DateTimeFormat('en-CA').format(draftAssignment.deadline);
+		}
+	});
+	$effect(() => {
+		if (!draftAssignment) {
+			return;
+		} else {
+			if (assignmentDateString) {
+				const [y, m, d] = assignmentDateString.split('-').map(Number);
+				draftAssignment.date = new Date(y, m - 1, d);
+			}
+
+			if (assignmentDeadlineString) {
+				const [y, m, d] = assignmentDeadlineString.split('-').map(Number);
+				draftAssignment.deadline = new Date(y, m - 1, d);
+			}
+		}
+	});
+
+	const emptyAssignment = () => {
 		const today = new Date();
 		const deadlineDate = new Date(today);
 		deadlineDate.setDate(today.getDate() + 7);
+		const name = `Assignment ${assignments.length + 1}`;
 		return {
-			name: 'Assignment',
+			name: name,
 			date: today,
 			deadline: deadlineDate,
 			note: '',
@@ -55,11 +90,30 @@
 		} as Assignment;
 	};
 
-	let selectedAssignment = $state<Assignment>();
+	let selectedAssignmentIndex = $state<number | null>(null);
 
-	let draftAssignment = $derived.by(() => {
-		return structuredClone(selectedAssignment);
+	let draftAssignment = $state<Assignment>(emptyAssignment());
+	$effect(() => {
+		if (selectedAssignmentIndex === null) {
+			if (editingAssignment) {
+				draftAssignment.labels = selectedProblems.map((p) => p.fullLabel);
+			}
+		} else {
+			const selectedAssignment = assignments[selectedAssignmentIndex];
+			draftAssignment = {
+				...selectedAssignment,
+				labels: selectedProblems.map((p) => p.fullLabel)
+			};
+		}
 	});
+
+	const createNewAssignment = () => {
+		selectedAssignmentIndex = null;
+		selectedProblems = [];
+		draftAssignment = emptyAssignment();
+		editingAssignment = true;
+		creatingNewAssignment = true;
+	};
 
 	let daynotes = $state<number[]>([]);
 	let daynoteCount = $state(0);
@@ -74,20 +128,38 @@
 		daynotes_dir: string;
 	}
 
-	let date = $state('');
-	let deadline = $state('');
-	let assignmentName = $state('');
-	let assignmentNote = $state('');
-
 	let currentlyCompilingDaynote = $state(0);
 
 	let loadingAssignments = $state(false);
 	let compilingDaynotes = $state(false);
 	let loadingLabels = $state(false);
 	let editingAssignment = $state(false);
-	const isAnyLoading = $derived(
-		loadingLabels || compilingDaynotes || loadingAssignments || editingAssignment
-	);
+	const isAnyLoading = $derived(loadingLabels || compilingDaynotes || loadingAssignments);
+
+	const isAssignmentEdited = () => {
+		if (selectedAssignmentIndex === null) {
+			return editingAssignment;
+		} else {
+			const selectedAssignment = assignments[selectedAssignmentIndex];
+			return JSON.stringify(draftAssignment) !== JSON.stringify(selectedAssignment);
+		}
+	};
+
+	const confirmSave = async () => {
+		if (editingAssignment) {
+			if (isAssignmentEdited()) {
+				console.log('Assignment Edited');
+				const shouldSave = await confirm('You have unsaved changes. Do you want to save them?', {
+					title: 'Unsaved changes',
+					okLabel: 'Save',
+					cancelLabel: 'Discard'
+				});
+				editingAssignment = false;
+				creatingNewAssignment = false;
+				return shouldSave;
+			}
+		}
+	};
 
 	const splitRefLabel = (refLabel: string) => {
 		const match = refLabel.match(/^([^-]+)-(.*)$/)!;
@@ -102,7 +174,6 @@
 	const readProblemsJson = async () => {
 		if (workingDir) {
 			try {
-				problemsJsonFile = workingDir + problemsJson;
 				const data = await invoke<string>('read_file', { filePath: problemsJsonFile });
 				const jsonData: { daynote: number; 'ref-label': string }[] = JSON.parse(data);
 
@@ -112,8 +183,8 @@
 						const [problemType, problemLabel] = splitRefLabel(p['ref-label']);
 						return {
 							daynote: p.daynote,
-							label: problemLabel,
-							refLabel: p['ref-label'],
+							shortLabel: problemLabel,
+							fullLabel: p['ref-label'],
 							problemType: problemType
 						};
 					});
@@ -137,7 +208,6 @@
 		if (workingDir) {
 			loadingAssignments = true;
 			try {
-				assignmentsJsonFile = workingDir + assignmentsJson;
 				const data = await invoke<string>('read_file', { filePath: assignmentsJsonFile });
 				const jsonData = JSON.parse(data);
 
@@ -154,9 +224,82 @@
 				console.log('Assignments JSON not found or failed to parse ' + err);
 			}
 			loadingAssignments = false;
+			discardAssignment();
 		} else {
 			console.log('Working directory undetermined.');
 		}
+	};
+
+	const writeAssignmentsJson = async () => {
+		try {
+			const jsonAssignments = assignments.map((assignment) => {
+				return {
+					name: assignment.name,
+					date: {
+						year: assignment.date.getFullYear(),
+						month: assignment.date.getMonth(),
+						day: assignment.date.getDate()
+					},
+					deadline: {
+						year: assignment.deadline.getFullYear(),
+						month: assignment.deadline.getMonth(),
+						day: assignment.deadline.getDate()
+					},
+					note: assignment.note,
+					labels: assignment.labels
+				};
+			});
+			const jsonAssignments2 = assignments.map((assignment) => {
+				return {
+					...assignment,
+					date: {
+						year: assignment.date.getFullYear(),
+						month: assignment.date.getMonth(),
+						day: assignment.date.getDate()
+					},
+					deadline: {
+						year: assignment.deadline.getFullYear(),
+						month: assignment.deadline.getMonth(),
+						day: assignment.deadline.getDate()
+					}
+				};
+			});
+			const jsonData = JSON.stringify(jsonAssignments2);
+			const result = await invoke<string>('write_file', {
+				filePath: assignmentsJsonFile,
+				contents: jsonData
+			});
+			console.log('Successfully written assignments JSON : ' + result);
+		} catch (err) {
+			console.log('Error saving assignments to JSON : ' + err);
+		}
+	};
+
+	const saveAssignment = async () => {
+		if (selectedAssignmentIndex === null) {
+			if (editingAssignment) {
+				assignments.push(draftAssignment);
+				selectedAssignmentIndex = assignments.length - 1;
+				editingAssignment = false;
+				creatingNewAssignment = false;
+			}
+		} else {
+			assignments[selectedAssignmentIndex] = draftAssignment;
+		}
+		await writeAssignmentsJson();
+	};
+
+	const deleteAssignment = async () => {
+		assignments = assignments.filter((_, i) => i !== selectedAssignmentIndex);
+		discardAssignment();
+		await writeAssignmentsJson();
+	};
+
+	const discardAssignment = () => {
+		draftAssignment = emptyAssignment();
+		creatingNewAssignment = false;
+		editingAssignment = false;
+		selectedAssignmentIndex = null;
 	};
 
 	const toggleSelectedProblems = (problem: Problem) => {
@@ -165,14 +308,18 @@
 			: [...selectedProblems, problem];
 	};
 
-	const selectAssignment = (assignment: Assignment) => {
-		if (!editingAssignment) {
-			selectedAssignment = assignment;
-			selectedProblems = assignment.labels
-				.map((label) => problems.find((p) => p.refLabel === label))
-				.filter((p): p is Problem => p !== undefined);
-			console.log(selectedAssignment);
+	const selectAssignment = async (index: number) => {
+		const shouldSave = await confirmSave();
+		if (shouldSave) {
+			await saveAssignment();
 		}
+		selectedAssignmentIndex = index;
+		editingAssignment = true;
+		const selectedAssignment = assignments[index];
+		selectedProblems = selectedAssignment.labels
+			.map((label) => problems.find((p) => p.fullLabel === label))
+			.filter((p): p is Problem => p !== undefined);
+		console.log(`Selected ${selectedAssignment.name}`);
 	};
 
 	const toggleProblemFilter = (problemType: string) => {
@@ -183,18 +330,20 @@
 
 	onMount(async () => {
 		try {
-			const config = await invoke<Config>('read_config');
-			typstFilePath = config.typst_file_path;
-			if (typstFilePath) {
-				workingDir = await invoke<string>('get_parent_dir', { path: typstFilePath });
-			}
-			assignmentsDir = config.assignment_dir;
-			daynotesDir = config.daynotes_dir;
+			await readConfig();
 		} catch (err) {
-			console.log('Config not found!');
+			console.log('Config not found!' + err);
 		}
-		await readProblemsJson();
-		await readAssignmentsJson();
+		try {
+			await readProblemsJson();
+		} catch (err) {
+			console.log('Error reading Problems Json : ' + err);
+		}
+		try {
+			await readAssignmentsJson();
+		} catch (err) {
+			console.log('Error reading Assignments Json : ' + err);
+		}
 	});
 
 	const selectFile = async () => {
@@ -204,8 +353,9 @@
 		});
 		if (selected) {
 			typstFilePath = selected;
-			workingDir = await invoke<string>('get_parent_dir', { path: selected });
-			await saveConfig();
+			// workingDir = await invoke<string>('get_parent_dir', { path: selected });
+			await computeWorkingDir();
+			await writeConfig();
 			await readProblemsJson();
 		}
 	};
@@ -219,11 +369,19 @@
 			if (field === 'assignmentsDir') assignmentsDir = selected;
 			if (field === 'daynotesDir') daynotesDir = selected;
 
-			await saveConfig();
+			await writeConfig();
 		}
 	};
 
-	const saveConfig = async () => {
+	const readConfig = async () => {
+		const config = await invoke<Config>('read_config');
+		typstFilePath = config.typst_file_path;
+		await computeWorkingDir();
+		assignmentsDir = config.assignment_dir;
+		daynotesDir = config.daynotes_dir;
+	};
+
+	const writeConfig = async () => {
 		try {
 			await invoke('write_config', {
 				config: {
@@ -238,7 +396,7 @@
 		}
 	};
 
-	const createDaynotes = async () => {
+	const compileDaynotes = async () => {
 		compilingDaynotes = true;
 		for (const daynote of daynotes) {
 			currentlyCompilingDaynote = daynote;
@@ -263,9 +421,31 @@
 		compilingDaynotes = false;
 	};
 
-	const handleCreateAssignment = () => {
-		// Create assignment logic here
+	let compilingAssignment = $state(false);
+	const compileAssignment = async (assignmentIndex: number | null) => {
+		if (assignmentIndex) {
+			compilingAssignment = true;
+			const selectedAssignment = assignments[assignmentIndex];
+			let outputFile = `${selectedAssignment.name}.pdf`;
+			try {
+				const args = [
+					`fancy-mode=${fancyMode}`,
+					`show-hints=${showHints}`,
+					`show-proofs=${showProofs}`,
+					`assignment-index=${assignmentIndex}`
+				];
+				const result = await invoke('compile_typst', {
+					inputFile: typstFilePath,
+					outputFile: await join(assignmentsDir, outputFile),
+					args: args
+				});
+				console.log(`Successfully compiled assignment : ${outputFile} ` + result);
+			} catch (err) {
+				console.error('Error compiling assignment : ', err);
+			}
+		}
 	};
+
 	const loadLabelsFromTypst = async () => {
 		loadingLabels = true;
 		try {
@@ -392,7 +572,7 @@
 
 		<!-- Daynote Compilation -->
 		<div class="bg-white rounded-lg shadow p-6 mb-6">
-			<h2 class="text-xl font-semibold text-gray-800 mb-4">Create Daynotes</h2>
+			<h2 class="text-xl font-semibold text-gray-800 mb-4">Daynotes</h2>
 			<div class="flex justify-around">
 				<label class="flex items-center gap-2 cursor-pointer">
 					<input type="checkbox" bind:checked={fancyMode} class="h-4 w-4 rounded-sm" />
@@ -412,7 +592,7 @@
 
 			<div class="flex gap-3 mt-6 justify-center">
 				<button
-					onclick={createDaynotes}
+					onclick={compileDaynotes}
 					disabled={isAnyLoading || daynoteCount === 0}
 					class="px-6 py-2 bg-green-500 min-w-60 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 				>
@@ -430,25 +610,42 @@
 
 		<!-- Assignment Creation -->
 		<div class="bg-white rounded-lg shadow p-6 mb-6 flex flex-col gap-4">
-			<div class="flex items-center p-2">
+			<div class="flex items-center justify-between p-2">
 				<span class="text-xl flex items-center h-10 font-semibold text-gray-800 mr-5"
-					>Create Assignments</span
+					>Assignments</span
 				>
-				<button
-					type="button"
-					onclick={readAssignmentsJson}
-					disabled={isAnyLoading}
-					class="h-10 bg-red-400 min-w-40 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
-					aria-label="Load assignments">Load Assignment</button
-				>
+				<!-- Assignment load, new, compile all buttons -->
+				<div class="flex justify-end gap-2">
+					<button
+						type="button"
+						onclick={readAssignmentsJson}
+						disabled={isAnyLoading}
+						class="h-10 bg-red-400 min-w-40 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
+						aria-label="Load assignments">Load Assignments</button
+					>
+					<button
+						type="button"
+						onclick={createNewAssignment}
+						disabled={isAnyLoading || creatingNewAssignment}
+						class="h-10 bg-red-400 min-w-40 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
+						aria-label="Load assignments">New Assignment</button
+					>
+					<button
+						type="button"
+						disabled={isAnyLoading}
+						class="h-10 bg-green-400 min-w-40 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
+						aria-label="Load assignments">Compile All</button
+					>
+				</div>
 			</div>
+			<!-- List of assignments -->
 			<div class="flex overflow-x-auto h-30 w-full border border-gray-300 rounded-lg gap-2 p-2">
-				{#each assignments as assignment}
+				{#each assignments as assignment, index}
 					<button
 						type="button"
 						class="flex flex-col items-center p-2 border-dotted border rounded-lg min-w-40 cursor-pointer gap-1 hover:bg-amber-100"
-						class:bg-red-100={assignment === selectedAssignment}
-						onclick={() => selectAssignment(assignment)}
+						class:bg-red-100={index === selectedAssignmentIndex}
+						onclick={() => selectAssignment(index)}
 					>
 						<span>{assignment.name}</span>
 						<span class="font-thin text-xs text-green-500"
@@ -467,13 +664,16 @@
 						>
 					</button>
 				{/each}
+				<!-- Add assignment svg -->
 				<div
 					class="flex flex-col items-center p-2 border-dotted border rounded-lg min-w-40 cursor-pointer gap-1 hover:bg-amber-100"
 				>
 					<button
 						type="button"
-						class="p-1 text-gray-500 w-full h-full flex justify-center hover:text-gray-600 transition"
-						aria-label="New"
+						onclick={createNewAssignment}
+						disabled={creatingNewAssignment}
+						class="p-1 text-gray-500 w-full h-full flex justify-center hover:text-gray-600 transition cursor-pointer"
+						aria-label="New Assignment"
 					>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -486,7 +686,9 @@
 					</button>
 				</div>
 			</div>
+			<!-- List of problems -->
 			<div class="flex gap-5">
+				<!-- All problems -->
 				<div class="flex-1/2">
 					<div class="p-2 h-10 flex justify-between">
 						<span>Problems ({filteredProblems.length}/{problems.length})</span>
@@ -495,11 +697,11 @@
 								<button
 									type="button"
 									onclick={() => toggleProblemFilter(problemType)}
-									class="border-0 hover:bg-gray-400 rounded-sm p-2 flex items-center cursor-pointer"
+									class="border-0 hover:bg-gray-400 rounded-sm p-1 flex items-center cursor-pointer"
 									class:bg-gray-200={!selectedProblemTypes.includes(problemType)}
 									class:bg-blue-300={selectedProblemTypes.includes(problemType)}
 								>
-									<span class="text-xs"
+									<span class="text-[8pt]"
 										>{problemType} ({problems.filter((p) => p.problemType == problemType)
 											.length})</span
 									>
@@ -523,12 +725,13 @@
 									<span class="text-xs font-thin">Type: {problem.problemType}</span>
 								</div>
 								<div class="mt-1 flex">
-									<span>{problem.label}</span>
+									<span>{problem.shortLabel}</span>
 								</div>
 							</button>
 						{/each}
 					</div>
 				</div>
+				<!-- Selected problems -->
 				<div class="flex-1/2">
 					<div class="p-2 h-10">
 						<span>Selected problems</span>
@@ -547,62 +750,21 @@
 									<span class="text-xs font-thin">Type: {problem.problemType}</span>
 								</div>
 								<div class="mt-1 flex">
-									<span>{problem.label}</span>
+									<span>{problem.shortLabel}</span>
 								</div>
 							</button>
 						{/each}
 					</div>
 				</div>
 			</div>
-		</div>
-
-		<!-- Lists Section -->
-		<div class="grid grid-cols-2 gap-6 mb-6">
-			<!-- Available Labels -->
-			<div class="bg-white rounded-lg shadow p-6">
-				<h3 class="text-lg font-semibold text-gray-800 mb-4">
-					Problems ({filteredProblems.length}/{problems.length})
-				</h3>
-				<div class="border border-gray-300 rounded-lg h-64 overflow-y-auto">
-					{#if problems.length > 0}
-						<ul class="divide-y">
-							{#each problems as daynote}
-								<!-- {#if daynote[1].length > 0}
-									{#each daynote[1] as problem}
-										<li>
-											<button
-												type="button"
-												onclick={() => toggleSelectedProblems(problem)}
-												class="w-full text-left p-2 flex flex-col focus:outline-none"
-												class:bg-gray-200={selectedProblems.includes(problem)}
-												class:hover:bg-gray-100={!selectedProblems.includes(problem)}
-												class:hover:bg-gray-300={selectedProblems.includes(problem)}
-											>
-												<span class="text-xs text-gray-400">Daynote {daynote[0]}</span>
-												<span>{problem}</span>
-											</button>
-										</li>
-									{/each}
-								{/if} -->
-							{/each}
-						</ul>
-					{:else}
-						<div class="px-4 py-8 text-center text-gray-400">No problem labels loaded</div>
-					{/if}
-				</div>
-			</div>
-		</div>
-
-		<!-- Assignment Form -->
-		<div class="bg-white rounded-lg shadow p-6">
-			<h2 class="text-xl font-semibold text-gray-800 mb-4">Create Assignment</h2>
+			<!-- Assignment dates -->
 			<div class="grid grid-cols-2 gap-4 mb-4">
 				<div>
 					<label for="date" class="block text-sm font-medium text-gray-700 mb-2">Date</label>
 					<input
 						id="date"
 						type="date"
-						value={date}
+						bind:value={assignmentDateString}
 						class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 					/>
 				</div>
@@ -612,44 +774,63 @@
 					<input
 						id="deadline"
 						type="date"
-						value={deadline}
+						bind:value={assignmentDeadlineString}
 						class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 					/>
 				</div>
 			</div>
-
-			<div class="mb-4">
+			<!-- Assignment name -->
+			<div class="">
 				<label for="assignmentName" class="block text-sm font-medium text-gray-700 mb-2"
 					>Assignment Name</label
 				>
 				<input
 					type="text"
-					value={assignmentName}
+					bind:value={draftAssignment.name}
 					class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 				/>
 			</div>
-
-			<div class="mb-6">
+			<!-- Assignment note -->
+			<div class="">
 				<label for="assignmentNote" class="block text-sm font-medium text-gray-700 mb-2"
 					>Assignment Note</label
 				>
 				<textarea
 					id="assignmentNote"
-					onchange={(e) => (assignmentNote = e.currentTarget.value)}
-					oninput={(e) => (assignmentNote = e.currentTarget.value)}
+					bind:value={draftAssignment.note}
 					rows="4"
 					class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500
 					focus:border-transparent"
 				>
 				</textarea>
 			</div>
-
-			<button
-				onclick={handleCreateAssignment}
-				class="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition"
-			>
-				Create Assignment
-			</button>
+			<!-- Save and Compile -->
+			<div class="flex justify-end gap-5">
+				<button
+					id="saveAssignment"
+					onclick={saveAssignment}
+					disabled={!isAssignmentEdited()}
+					class="px-6 py-2 bg-blue-500 min-w-60 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-400 cursor-pointer"
+				>
+					Save Assignment
+				</button>
+				<button
+					id="deleteAssignment"
+					onclick={creatingNewAssignment ? discardAssignment : deleteAssignment}
+					disabled={!creatingNewAssignment && selectedAssignmentIndex === null}
+					class="px-6 py-2 bg-blue-500 min-w-60 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-400 cursor-pointer"
+				>
+					{creatingNewAssignment ? 'Discard Assignment' : 'Delete Assignment'}
+				</button>
+				<button
+					id="compileAssignment"
+					disabled={selectedAssignmentIndex === null}
+					onclick={() => compileAssignment(selectedAssignmentIndex)}
+					class="px-6 py-2 bg-blue-500 min-w-60 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-400 cursor-pointer"
+				>
+					Compile Assignment
+				</button>
+			</div>
 		</div>
 	</div>
 </div>
