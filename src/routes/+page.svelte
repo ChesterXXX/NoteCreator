@@ -32,6 +32,11 @@
 		workingDir = await invoke<string>('get_parent_dir', { path: typstFilePath });
 	};
 
+	let isTypstFilePathSet = $derived(Boolean(typstFilePath));
+	let isDaynotesDirSet = $derived(Boolean(daynotesDir));
+	let isAssignmentsDirSet = $derived(Boolean(assignmentsDir));
+	let isAllPathSet = $derived(isTypstFilePathSet && isDaynotesDirSet && isAssignmentsDirSet);
+
 	let problemsJsonFile = $derived(workingDir ? workingDir + problemsJson : '');
 	let assignmentsJsonFile = $derived(workingDir ? workingDir + assignmentsJson : '');
 
@@ -353,7 +358,6 @@
 		});
 		if (selected) {
 			typstFilePath = selected;
-			// workingDir = await invoke<string>('get_parent_dir', { path: selected });
 			await computeWorkingDir();
 			await writeConfig();
 			await readProblemsJson();
@@ -428,22 +432,40 @@
 			const selectedAssignment = assignments[assignmentIndex];
 			let outputFile = `${selectedAssignment.name}.pdf`;
 			try {
-				const args = [
-					`fancy-mode=${fancyMode}`,
-					`show-hints=${showHints}`,
-					`show-proofs=${showProofs}`,
-					`assignment-index=${assignmentIndex}`
-				];
+				const args = [`assignment-index=${assignmentIndex}`];
 				const result = await invoke('compile_typst', {
 					inputFile: typstFilePath,
 					outputFile: await join(assignmentsDir, outputFile),
 					args: args
 				});
-				console.log(`Successfully compiled assignment : ${outputFile} ` + result);
+				console.log(`Successfully compiled ${selectedAssignment.name} : ${outputFile} ` + result);
 			} catch (err) {
-				console.error('Error compiling assignment : ', err);
+				console.error('Error compiling ${selectedAssignment.name} : ', err);
+			}
+			compilingAssignment = false;
+		}
+	};
+
+	let compilingAllAssignments = $state(false);
+	const compileAllAssignment = async () => {
+		const numAssignments = assignments.length;
+		compilingAllAssignments = true;
+		for (const assignmentIndex in [...assignments.keys()]) {
+			const selectedAssignment = assignments[assignmentIndex];
+			let outputFile = `${selectedAssignment.name}.pdf`;
+			try {
+				const args = [`assignment-index=${assignmentIndex}`];
+				const result = await invoke('compile_typst', {
+					inputFile: typstFilePath,
+					outputFile: await join(assignmentsDir, outputFile),
+					args: args
+				});
+				console.log(`Successfully compiled ${selectedAssignment.name} : ${outputFile} ` + result);
+			} catch (err) {
+				console.error('Error compiling ${selectedAssignment.name} : ', err);
 			}
 		}
+		compilingAllAssignments = false;
 	};
 
 	const loadLabelsFromTypst = async () => {
@@ -505,10 +527,10 @@
 					<button
 						id="loadLabels"
 						onclick={loadLabelsFromTypst}
-						disabled={isAnyLoading}
+						disabled={isAnyLoading || !isTypstFilePathSet}
 						class="px-6 py-2 bg-blue-500 min-w-60 w-full text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-400"
 					>
-						{loadingLabels ? 'Loading labels...' : 'Load problem labels'}
+						{loadingLabels ? 'Loading labels...' : 'Load labels'}
 					</button>
 				</div>
 				<div>
@@ -593,7 +615,7 @@
 			<div class="flex gap-3 mt-6 justify-center">
 				<button
 					onclick={compileDaynotes}
-					disabled={isAnyLoading || daynoteCount === 0}
+					disabled={isAnyLoading || daynoteCount === 0 || !isTypstFilePathSet || !isDaynotesDirSet}
 					class="px-6 py-2 bg-green-500 min-w-60 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 				>
 					{#if compilingDaynotes}
@@ -633,6 +655,7 @@
 					<button
 						type="button"
 						disabled={isAnyLoading}
+						onclick={compileAllAssignment}
 						class="h-10 bg-green-400 min-w-40 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 						aria-label="Load assignments">Compile All</button
 					>
