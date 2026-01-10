@@ -134,12 +134,22 @@
 	}
 
 	let currentlyCompilingDaynote = $state(0);
+	let currentlyCompilingAssignment = $state(0);
 
 	let loadingAssignments = $state(false);
 	let compilingDaynotes = $state(false);
 	let loadingLabels = $state(false);
 	let editingAssignment = $state(false);
-	const isAnyLoading = $derived(loadingLabels || compilingDaynotes || loadingAssignments);
+	let compilingAssignment = $state(false);
+	let compilingAllAssignments = $state(false);
+	const isAnyLoading = $derived(
+		loadingLabels ||
+			compilingDaynotes ||
+			loadingAssignments ||
+			compilingAssignment ||
+			compilingAllAssignments ||
+			creatingNewAssignment
+	);
 
 	const isAssignmentEdited = () => {
 		if (selectedAssignmentIndex === null) {
@@ -302,9 +312,53 @@
 
 	const discardAssignment = () => {
 		draftAssignment = emptyAssignment();
+		selectedProblems = [];
 		creatingNewAssignment = false;
 		editingAssignment = false;
 		selectedAssignmentIndex = null;
+	};
+
+	let currentlyDraggingIndex: null | number = null;
+	let draggingOverIndex: null | number = null;
+
+	const handleDragStart = (e: DragEvent, index: number) => {
+		currentlyDraggingIndex = index;
+		console.log(`Draggin item ${currentlyDraggingIndex}`);
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = 'move';
+		}
+	};
+
+	const handleDragOver = (e: DragEvent, index: number) => {
+		e.preventDefault();
+		draggingOverIndex = index;
+		console.log(`Draggin over item ${draggingOverIndex}`);
+		if (e.dataTransfer) {
+			e.dataTransfer.dropEffect = 'move';
+		}
+	};
+
+	const handleDragLeave = () => {
+		console.log('Left drag');
+		draggingOverIndex = null;
+	};
+
+	const handleDragEnd = () => {
+		console.log('Drag ended');
+		currentlyDraggingIndex = null;
+		draggingOverIndex = null;
+	};
+
+	const handleDrop = (e: DragEvent, index: number) => {
+		e.preventDefault();
+		console.log('Handling drop');
+		if (currentlyDraggingIndex !== null && currentlyDraggingIndex !== index) {
+			const items = [...selectedProblems];
+			const [draggedItem] = items.splice(currentlyDraggingIndex, 1);
+			items.splice(index, 0, draggedItem);
+			selectedProblems = items;
+			console.log('Dragged');
+		}
 	};
 
 	const toggleSelectedProblems = (problem: Problem) => {
@@ -425,9 +479,10 @@
 		compilingDaynotes = false;
 	};
 
-	let compilingAssignment = $state(false);
+	let showAssignmentCompiledConfirmation = $state(false);
 	const compileAssignment = async (assignmentIndex: number | null) => {
-		if (assignmentIndex) {
+		console.log(`Compiling Assignment ${assignmentIndex}`);
+		if (assignmentIndex !== null) {
 			compilingAssignment = true;
 			const selectedAssignment = assignments[assignmentIndex];
 			let outputFile = `${selectedAssignment.name}.pdf`;
@@ -439,6 +494,12 @@
 					args: args
 				});
 				console.log(`Successfully compiled ${selectedAssignment.name} : ${outputFile} ` + result);
+				showAssignmentCompiledConfirmation = true;
+				// await setTimeout(() => {
+				// 	showAssignmentCompiledConfirmation = false;
+				// }, 500);
+				await new Promise((resolve) => setTimeout(resolve, 500));
+				showAssignmentCompiledConfirmation = false;
 			} catch (err) {
 				console.error('Error compiling ${selectedAssignment.name} : ', err);
 			}
@@ -446,12 +507,12 @@
 		}
 	};
 
-	let compilingAllAssignments = $state(false);
 	const compileAllAssignment = async () => {
 		const numAssignments = assignments.length;
 		compilingAllAssignments = true;
-		for (const assignmentIndex in [...assignments.keys()]) {
-			const selectedAssignment = assignments[assignmentIndex];
+		for (const [assignmentIndex, selectedAssignment] of assignments.entries()) {
+			currentlyCompilingAssignment = assignmentIndex;
+			console.log(`Compiling Assignment ${assignmentIndex}`);
 			let outputFile = `${selectedAssignment.name}.pdf`;
 			try {
 				const args = [`assignment-index=${assignmentIndex}`];
@@ -641,24 +702,33 @@
 					<button
 						type="button"
 						onclick={readAssignmentsJson}
-						disabled={isAnyLoading}
+						disabled={isAnyLoading || isAssignmentEdited()}
 						class="h-10 bg-red-400 min-w-40 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 						aria-label="Load assignments">Load Assignments</button
 					>
 					<button
 						type="button"
 						onclick={createNewAssignment}
-						disabled={isAnyLoading || creatingNewAssignment}
+						disabled={isAnyLoading || creatingNewAssignment || isAssignmentEdited()}
 						class="h-10 bg-red-400 min-w-40 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 						aria-label="Load assignments">New Assignment</button
 					>
 					<button
 						type="button"
-						disabled={isAnyLoading}
+						disabled={isAnyLoading || isAssignmentEdited()}
 						onclick={compileAllAssignment}
-						class="h-10 bg-green-400 min-w-40 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
-						aria-label="Load assignments">Compile All</button
+						class="h-10 bg-green-400 min-w-60 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
+						aria-label="Load assignments"
 					>
+						{#if compilingAllAssignments}
+							Compiling {currentlyCompilingAssignment}/{assignments.length} assignment
+						{:else if daynoteCount > 0}
+							Compile {assignments.length}
+							{assignments.length > 1 ? 'assignments' : 'assignment'}
+						{:else}
+							No assignment to compile
+						{/if}
+					</button>
 				</div>
 			</div>
 			<!-- List of assignments -->
@@ -760,22 +830,48 @@
 						<span>Selected problems</span>
 					</div>
 					<div class="h-64 overflow-y-auto w-full flex flex-col border border-gray-300 rounded-lg">
-						{#each selectedProblems as problem}
-							<button
-								type="button"
-								onclick={() => toggleSelectedProblems(problem)}
-								class="flex flex-col p-2 border-dotted border rounded-lg cursor-pointer"
-								class:bg-red-100={selectedProblems.includes(problem)}
-								class:bg-gray-100={!selectedProblems.includes(problem)}
+						{#each selectedProblems as problem, index}
+							<div
+								role="button"
+								draggable="true"
+								ondragstart={(e) => handleDragStart(e, index)}
+								ondragover={(e) => handleDragOver(e, index)}
+								ondragleave={handleDragLeave}
+								ondragend={handleDragEnd}
+								ondrop={(e) => handleDrop(e, index)}
+								class="flex flex-col p-2 border-dotted border rounded-lg cursor-move"
+								aria-label="Selected Problems"
+								tabindex="0"
 							>
 								<div class="flex justify-between">
 									<span class="text-xs font-thin">Daynote: {problem.daynote}</span>
 									<span class="text-xs font-thin">Type: {problem.problemType}</span>
 								</div>
-								<div class="mt-1 flex">
+								<div class="mt-1 flex justify-between">
 									<span>{problem.shortLabel}</span>
+									<button
+										onclick={() => toggleSelectedProblems(problem)}
+										class="p-2 hover:bg-gray-200 rounded transition-colors cursor-pointer"
+										aria-label="Remove Problem"
+									>
+										<svg
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<polyline points="3 6 5 6 21 6"></polyline>
+											<path
+												d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+											></path>
+											<line x1="10" y1="11" x2="10" y2="17"></line>
+											<line x1="14" y1="11" x2="14" y2="17"></line>
+										</svg>
+									</button>
 								</div>
-							</button>
+							</div>
 						{/each}
 					</div>
 				</div>
@@ -839,19 +935,31 @@
 				</button>
 				<button
 					id="deleteAssignment"
-					onclick={creatingNewAssignment ? discardAssignment : deleteAssignment}
-					disabled={!creatingNewAssignment && selectedAssignmentIndex === null}
+					onclick={creatingNewAssignment || isAssignmentEdited()
+						? discardAssignment
+						: deleteAssignment}
+					disabled={(!creatingNewAssignment && selectedAssignmentIndex === null) || isAnyLoading}
 					class="px-6 py-2 bg-blue-500 min-w-60 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-400 cursor-pointer"
 				>
-					{creatingNewAssignment ? 'Discard Assignment' : 'Delete Assignment'}
+					{creatingNewAssignment
+						? 'Discard Assignment'
+						: isAssignmentEdited()
+							? 'Discard Changes'
+							: 'Delete Assignment'}
 				</button>
 				<button
 					id="compileAssignment"
-					disabled={selectedAssignmentIndex === null}
+					disabled={selectedAssignmentIndex === null || isAnyLoading || isAssignmentEdited()}
 					onclick={() => compileAssignment(selectedAssignmentIndex)}
 					class="px-6 py-2 bg-blue-500 min-w-60 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-400 cursor-pointer"
 				>
-					Compile Assignment
+					{#if showAssignmentCompiledConfirmation}
+						<span>Done!</span>
+					{:else if compilingAssignment}
+						<span>Compiling...</span>
+					{:else}
+						<span>Compile Assignment</span>
+					{/if}
 				</button>
 			</div>
 		</div>
