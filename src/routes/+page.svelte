@@ -657,18 +657,33 @@
 		<div class="bg-white rounded-lg shadow p-6 mb-6">
 			<h2 class="text-xl font-semibold text-gray-800 mb-4">Daynotes</h2>
 			<div class="flex justify-around">
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="checkbox" bind:checked={fancyMode} class="h-4 w-4 rounded-sm" />
+				<label class="flex items-center gap-2">
+					<input
+						type="checkbox"
+						bind:checked={fancyMode}
+						class="h-4 w-4 rounded-sm cursor-pointer disabled:opacity-50 disabled:cursor-default"
+						disabled={isAnyLoading || !isAllPathSet}
+					/>
 					<span>Fancy Mode</span>
 				</label>
 
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="checkbox" bind:checked={showHints} class="h-4 w-4 rounded-sm" />
+				<label class="flex items-center gap-2">
+					<input
+						type="checkbox"
+						bind:checked={showHints}
+						class="h-4 w-4 rounded-sm cursor-pointer disabled:opacity-50 disabled:cursor-default"
+						disabled={isAnyLoading || !isAllPathSet}
+					/>
 					<span>Show Hints</span>
 				</label>
 
-				<label class="flex items-center gap-2 cursor-pointer">
-					<input type="checkbox" bind:checked={showProofs} class="h-4 w-4 rounded-sm" />
+				<label class="flex items-center gap-2">
+					<input
+						type="checkbox"
+						bind:checked={showProofs}
+						class="h-4 w-4 rounded-sm cursor-pointer disabled:opacity-50 disabled:cursor-default"
+						disabled={isAnyLoading || !isAllPathSet}
+					/>
 					<span>Show Proofs</span>
 				</label>
 			</div>
@@ -702,20 +717,23 @@
 					<button
 						type="button"
 						onclick={readAssignmentsJson}
-						disabled={isAnyLoading || isAssignmentEdited()}
+						disabled={isAnyLoading || isAssignmentEdited() || !isAllPathSet}
 						class="h-10 bg-red-400 min-w-40 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 						aria-label="Load assignments">Load Assignments</button
 					>
 					<button
 						type="button"
 						onclick={createNewAssignment}
-						disabled={isAnyLoading || creatingNewAssignment || isAssignmentEdited()}
+						disabled={isAnyLoading ||
+							creatingNewAssignment ||
+							isAssignmentEdited() ||
+							!isAllPathSet}
 						class="h-10 bg-red-400 min-w-40 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 						aria-label="Load assignments">New Assignment</button
 					>
 					<button
 						type="button"
-						disabled={isAnyLoading || isAssignmentEdited()}
+						disabled={isAnyLoading || isAssignmentEdited() || !isAllPathSet}
 						onclick={compileAllAssignment}
 						class="h-10 bg-green-400 min-w-60 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 						aria-label="Load assignments"
@@ -758,14 +776,12 @@
 					</button>
 				{/each}
 				<!-- Add assignment svg -->
-				<div
-					class="flex flex-col items-center p-2 border-dotted border rounded-lg min-w-40 cursor-pointer gap-1 hover:bg-amber-100"
-				>
+				<div class="flex flex-col items-center p-2 border-dotted border rounded-lg min-w-40 gap-1">
 					<button
 						type="button"
 						onclick={createNewAssignment}
-						disabled={creatingNewAssignment}
-						class="p-1 text-gray-500 w-full h-full flex justify-center hover:text-gray-600 transition cursor-pointer"
+						disabled={creatingNewAssignment || isAnyLoading || !isAllPathSet}
+						class="p-1 text-gray-500 w-full h-full flex justify-center hover:text-gray-600 transition cursor-pointer disabled:opacity-50 disabled:hover:bg-none"
 						aria-label="New Assignment"
 					>
 						<svg
@@ -883,8 +899,9 @@
 					<input
 						id="date"
 						type="date"
+						disabled={isAnyLoading || !isAllPathSet}
 						bind:value={assignmentDateString}
-						class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+						class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
 					/>
 				</div>
 				<div>
@@ -893,8 +910,9 @@
 					<input
 						id="deadline"
 						type="date"
+						disabled={isAnyLoading || !isAllPathSet}
 						bind:value={assignmentDeadlineString}
-						class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+						class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
 					/>
 				</div>
 			</div>
@@ -905,8 +923,9 @@
 				>
 				<input
 					type="text"
+					disabled={isAnyLoading || !isAllPathSet}
 					bind:value={draftAssignment.name}
-					class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+					class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
 				/>
 			</div>
 			<!-- Assignment note -->
@@ -918,8 +937,8 @@
 					id="assignmentNote"
 					bind:value={draftAssignment.note}
 					rows="4"
-					class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500
-					focus:border-transparent"
+					disabled={isAnyLoading || !isAllPathSet}
+					class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-50 focus:border-transparent"
 				>
 				</textarea>
 			</div>
