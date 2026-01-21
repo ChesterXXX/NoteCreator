@@ -15,9 +15,9 @@
   [#day#super[#suffix] #month-year]
 }
 
-#let parse-thm-args(args) = {
+#let parse-thm-args(env-name, args) = {
   let content-label = none
-  let content = none
+  let ref-label = none
   let has-proof = true
 
   if "content-label" in args.named() {
@@ -27,25 +27,39 @@
   if "has-proof" in args.named(){
     has-proof = args.named().at("has-proof")
   }
-  
-  let pos = args.pos()
-  if pos.len() == 1 {
-    content = pos.at(0)
-  } else if pos.len() == 2 {
-    if type(pos.at(0)) == bool {
-      has-proof = pos.at(0)
-      content = pos.at(1)
-    } else {
-      content-label = pos.at(0)
-      content = pos.at(1)
-    }
-  } else if pos.len() == 3 {
-    content-label = pos.at(0)
-    has-proof = pos.at(1)
-    content = pos.at(2)
+
+  if "ref-label" in args.named(){
+    ref-label = args.named().at("ref-label")
   }
   
-  (content-label: content-label, content: content, has-proof: has-proof)
+  let pos = args.pos()
+  let content = pos.last()
+
+  let ref-label-regex = regex("^[a-zA-Z0-9]+-[a-zA-Z0-9\-]*$")
+
+  let remaining = pos.slice(0, -1)  // exclude content
+
+  for arg in remaining {
+    if type(arg) == bool {
+      has-proof = arg
+    } else {
+      let arg-str = str(arg)
+      if ref-label == none and arg-str.match(ref-label-regex) != none {
+        ref-label = arg-str
+      } else if content-label == none {
+        content-label = arg-str
+      }
+    }
+  }
+
+  if ref-label != none {
+    let env-prefix = lower(env-name)
+    if not ref-label.starts-with(env-prefix + "-") {
+      ref-label = env-prefix + "-" + ref-label
+    }
+  }
+
+  (content-label: content-label, ref-label: ref-label, has-proof: has-proof, content: content)
 }
 
 #let parse-solution-args(args) = {
@@ -67,7 +81,7 @@
   (is-proof: is-proof, content: content)
 }
 
-#let parse-problem-args(args) = {
+#let parse-problem-args(env-name, args) = {
   let content-label = none
   let marks = none
   let ref-label = none
@@ -102,13 +116,14 @@
       content-label = arg-str
     }
   }
+
+  if ref-label != none {
+    let env-prefix = lower(env-name)
+    if not ref-label.starts-with(env-prefix + "-") {
+      ref-label = env-prefix + "-" + ref-label
+    }
+  }
   
-  // if pos.len() > 1 {
-  //   content-label = pos.at(0)
-  //   if pos.len() > 2{
-  //     marks = pos.at(1)
-  //   }
-  // }
   (content-label: content-label, marks: marks, content: content, ref-label: ref-label)
 }
 

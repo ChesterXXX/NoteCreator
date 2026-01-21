@@ -1,7 +1,7 @@
 #import "utils.typ": *
 
-#let instructor-name = "John Doe"
-#let course-name = "Stuff"
+#let instructor-name = "Aritra Bhowmick"
+#let course-name = "Algebraic Topology II (KSM4E02)"
 
 #let daynote-counter = counter("daynote")
 #let thm-counter = counter("theorem")
@@ -20,7 +20,7 @@
 #let assignment-index = if "assignment-index" in sys.inputs {
   eval(sys.inputs.at("assignment-index"))
 } else {
-  0
+  -1
 }
 
 #let selected-assignment = none
@@ -29,7 +29,7 @@
 #let assignment-deadline = ""
 #let assignment-note = ""
 
-#if assignment-index > -1 and assignment-index < assignments.len() {
+#if assignment-index > -1 {
   selected-assignment = assignments.at(assignment-index)
 }
 // #let selected-assignment = assignments.at(2)
@@ -118,7 +118,7 @@
   }
 }
 
-// #let daynotes-to-show = (2,)
+// #let daynotes-to-show = (3,)
 #let daynote(date: datetime.today(), tags: "", content) = {
   daynote-counter.step() 
   thm-counter.update(0)
@@ -132,9 +132,7 @@
     ))
     #if daynotes-to-show.len() == 0 or daynotes-to-show.contains(current){
       block[
-        #context [
-          = Day #daynote-counter.display() #box[#move(dy: -.1em)[:]] #my-date(date)
-        ]
+        = Day #daynote-counter.display() #box[#move(dy: -.1em)[:]] #my-date(date)
         
         #if tags != "" {
           v(0.5em)
@@ -146,12 +144,18 @@
         #content
       ]
       // colbreak()
+    } else {
+      // set heading(outlined: false)
+      box(height: 0pt, clip:true)[
+        #content
+      ]
     }
   ]
   if assignment-mode {
     set heading(outlined: false)
     box(height: 0pt, clip:true)[#daynote-content]
     v(-1fr)
+    // box(width: 0pt, height: 0pt, clip:true)[#daynote-content]
   } else {
     daynote-content
   }
@@ -161,17 +165,19 @@
   if assignment-mode {
     return
   }
-  let parsed = parse-thm-args(args)
+  let parsed = parse-thm-args(env-name, args)
   let content-label = parsed.content-label
+  let ref-label = parsed.ref-label
   let has-proof = parsed.has-proof
   let content = parsed.content
+
+  thm-counter.step()
 
   let styled-block = block(
     spacing: 1em,
     radius: if has-proof { (top: 4pt, bottom: 0pt) } else { 4pt },
     below: if has-proof { 0pt } else { auto }
   )[
-      #thm-counter.step()
       #block(
         fill: color.lighten(40%),
         width: 100%,
@@ -215,7 +221,6 @@
     breakable: true,
     spacing: 1em,
   )[
-      #thm-counter.step()
       #block(
         width: 100%,
         inset: 0pt,
@@ -240,13 +245,18 @@
   let content-block = if fancy-mode { styled-block } else { plain-block }
   
   // This is needed for referencing to work in the document
-  show figure: set block(breakable: true)
-  show figure: set block(sticky: has-proof)
-  figure(align(left, content-block), kind: "thm-like", supplement: env-name, numbering: n => numbering("1.1", daynote-counter.get().first(), n))
+  show figure: set block(breakable: true, sticky: has-proof)
+  // show figure: set block(sticky: has-proof)
+  let fig = figure(align(left, content-block), kind: "thm-like", supplement: env-name, numbering: n => numbering("1.1", daynote-counter.get().first(), thm-counter.get().first()))
+  if ref-label == none {
+    fig
+  } else {
+    [#fig #label(ref-label)]
+  }
 }
 
 #let problem-env(env-name, color, visible: true, ..args) = {
-  let parsed = parse-problem-args(args)
+  let parsed = parse-problem-args(env-name, args)
   
   let content-label = parsed.content-label
   let ref-label = parsed.ref-label
@@ -260,7 +270,7 @@
         ..old,
         (
           daynote: current, 
-          ref-label: ref-label
+          ref-label: ref-label,
         )
       ))
     }
@@ -282,11 +292,12 @@
 
   if not visible { return }
 
+  thm-counter.step()
+
   let styled-block = block(
     breakable: true,
     spacing: 1em,
   )[
-      #thm-counter.step()
       #block(
         fill: color.lighten(40%),
         width: 100%,
@@ -332,7 +343,6 @@
     breakable: true,
     spacing: 1em,
   )[
-      #thm-counter.step()
       #block(
         width: 100%,
         inset: 0pt,
@@ -360,7 +370,7 @@
   
   // This is needed for referencing to work in the document
   show figure: set block(breakable: true)
-  let fig = figure(align(left, content-block), kind: "thm-like", supplement: env-name, numbering: n => numbering("1.1", daynote-counter.get().first(), n))
+  let fig = figure(align(left, content-block), kind: "problem-like", supplement: env-name, numbering: n => numbering("1.1", daynote-counter.get().first(), thm-counter.get().first()))
   if ref-label == none {
     fig
   } else {
@@ -416,7 +426,6 @@
   }
 }
 
-// This environment is used while creating assignments
 #let generic-problem(problem) = {
   let content-label = problem.content-label
   let marks = problem.marks
@@ -457,19 +466,9 @@
       if assignment-note != "" [
         #underline[*Note:*] #assignment-note
       ]
-      if problems-to-show.len() == 0{
-        for (key, problem) in problems-content.get() {
-          [#generic-problem(problem)]
-        }
-      } else {
-        let problems-data = problems-content.get()
-        for label in problems-to-show {
-          if label in problems-data {
-            [#generic-problem(problems-data.at(label))]
-          }
-        }
+      for (key, problem) in problems-content.get() {
+        [#generic-problem(problem)]
       }
-      
     }
   }
 }
@@ -485,17 +484,22 @@
     let heading-text = num-str + " " + body
     heading-text
 
-    show heading: none
-    heading(..args, outlined: false, bookmarked: true, numbering: none, heading-text)
+    if daynotes-to-show.len() == 0 or daynotes-to-show.contains(daynote-num){
+      show heading: none
+      heading(..args, outlined: false, bookmarked: true, numbering: none, heading-text)
+    }
   } else {
     let (numbering, body, ..args) = it.fields()
+    let daynote-num = daynote-counter.get().at(0)
     let numbered-body = block({
       body
     })
     body
-    show heading: none
-    heading(..args, outlined: false, bookmarked: true, numbering: none, numbered-body)
-  }
+    if daynotes-to-show.len() == 0 or daynotes-to-show.contains(daynote-num){
+      show heading: none
+      heading(..args, outlined: false, bookmarked: true, numbering: none, numbered-body)
+    }
+  } 
 }
 
 #let definition(..args) = thm-env("Definition", rgb("#daa4a4"), has-proof: false, ..args)
@@ -507,7 +511,7 @@
 #let remark(..args) = thm-env("Remark", rgb("#f4dc51"), has-proof: false, ..args)
 #let caution(..args) = thm-env("Caution", rgb("#ec8484"), has-proof: false, ..args)
 
-#let exercise(..args) = problem-env("Exercise", rgb("#972c5e"), ..args)
+#let exercise(..args) = problem-env("Exercise", rgb("#d95b96"), ..args)
 #let assignment(..args) = problem-env("Assignment", rgb("#ff7dbc"), visible: show-assignment, ..args)
 #let quiz(..args) = problem-env("Quiz", rgb("#af40af"), visible: show-quiz, ..args)
 
