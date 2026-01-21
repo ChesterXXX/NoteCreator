@@ -387,7 +387,22 @@
 			: [...selectedProblemTypes, problemType];
 	};
 
+	let typstNotPresetnError = $state('');
+	const verifyIfTypstInstalled = async () => {
+		try {
+			await invoke('find_typst');
+		} catch (error) {
+			typstNotPresetnError = String(error);
+
+			// Auto-dismiss after 5 seconds
+			setTimeout(() => {
+				typstNotPresetnError = '';
+			}, 5000);
+		}
+	};
+
 	onMount(async () => {
+		await verifyIfTypstInstalled();
 		try {
 			await readConfig();
 		} catch (err) {
@@ -536,6 +551,7 @@
 				filePath: typstFilePath,
 				outputDir: workingDir
 			});
+			await readProblemsJson();
 		} catch (err) {
 			console.error('Error:', err);
 		}
@@ -544,6 +560,13 @@
 </script>
 
 <div class="min-h-screen bg-gray-50 p-8">
+	{#if typstNotPresetnError}
+		<div
+			class="fixed top-4 right-4 max-w-md rounded-lg shadow-lg p-4 bg-red-50 text-red-800 border border-red-200"
+		>
+			{typstNotPresetnError}
+		</div>
+	{/if}
 	<div class="max-w-6xl mx-auto">
 		<div class="flex justify-center">
 			<h1 class="text-3xl font-bold flex text-gray-900 mb-8">Note Creator</h1>

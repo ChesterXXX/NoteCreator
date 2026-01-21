@@ -57,6 +57,16 @@ fn write_file(file_path: String, contents: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn find_typst() -> Result<String, String> {
+    use std::process::Command;
+
+    match Command::new("typst").arg("--version").output() {
+        Ok(_) => Ok("typst".to_string()),
+        Err(_) => Err("typst not found. Please make sure it is in your PATH.".to_string()),
+    }
+}
+
+#[tauri::command]
 fn query_typst(file_path: String, output_dir: String) -> Result<String, String> {
     use std::fs;
     use std::process::Command;
@@ -124,6 +134,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            find_typst,
             query_typst,
             compile_typst,
             get_parent_dir,
