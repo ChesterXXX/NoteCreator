@@ -4,6 +4,12 @@
 
 use tauri::Manager;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[tauri::command]
 fn get_parent_dir(path: String) -> Result<String, String> {
     let mut dir = std::path::Path::new(&path)
@@ -60,7 +66,12 @@ fn write_file(file_path: String, contents: String) -> Result<String, String> {
 fn find_typst() -> Result<String, String> {
     use std::process::Command;
 
-    match Command::new("typst").arg("--version").output() {
+    let mut cmd = Command::new("typst");
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    match cmd.arg("--version").output() {
         Ok(_) => Ok("typst".to_string()),
         Err(_) => Err("typst not found. Please make sure it is in your PATH.".to_string()),
     }
@@ -71,8 +82,12 @@ fn query_typst(file_path: String, output_dir: String) -> Result<String, String> 
     use std::fs;
     use std::process::Command;
 
-    // Run typst query command
-    let output: std::process::Output = Command::new("typst")
+    let mut cmd = Command::new("typst");
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    let output: std::process::Output = cmd
         .args(&[
             "query",
             &file_path,
@@ -108,6 +123,10 @@ fn compile_typst(
     use std::process::Command;
 
     let mut cmd = Command::new("typst");
+    
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    
     let mut cmd_display = format!("typst compile \"{}\" \"{}\"", &input_file, &output_file);
 
     cmd.args(&["compile", &input_file, &output_file]);
