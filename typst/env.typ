@@ -145,7 +145,7 @@
       ]
       // colbreak()
     } else {
-      // set heading(outlined: false)
+      set heading(outlined: false)
       box(height: 0pt, clip:true)[
         #content
       ]
@@ -162,9 +162,6 @@
 }
 
 #let thm-env(env-name, color, ..args) = {
-  if assignment-mode {
-    return
-  }
   let parsed = parse-thm-args(env-name, args)
   let content-label = parsed.content-label
   let ref-label = parsed.ref-label

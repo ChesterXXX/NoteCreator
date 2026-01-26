@@ -147,8 +147,7 @@
 			compilingDaynotes ||
 			loadingAssignments ||
 			compilingAssignment ||
-			compilingAllAssignments ||
-			creatingNewAssignment
+			compilingAllAssignments
 	);
 
 	const isAssignmentEdited = () => {
