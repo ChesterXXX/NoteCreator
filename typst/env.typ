@@ -32,7 +32,7 @@
 #if assignment-index > -1 {
   selected-assignment = assignments.at(assignment-index)
 }
-// #let selected-assignment = assignments.at(2)
+// #let selected-assignment = assignments.at(0)
 
 #let show-hints = if "show-hints" in sys.inputs {
   eval(sys.inputs.at("show-hints"))
@@ -66,7 +66,7 @@
 
 #let daynotes-to-show = if "daynotes-to-show" in sys.inputs {
   let val = eval(sys.inputs.at("daynotes-to-show"))
-  if type(val) == "array" {
+  if type(val) == array {
     val
   } else {
     (val,)
@@ -118,12 +118,12 @@
   }
 }
 
-// #let daynotes-to-show = (3,)
+// #let daynotes-to-show = (7,10)
 #let daynote(date: datetime.today(), tags: "", content) = {
   daynote-counter.step() 
   thm-counter.update(0)
   let daynote-content = context[
-    #let current = daynote-counter.at(here()).at(0)
+    #let current = daynote-counter.get().at(0)
     #problems-label.update(old => (
       ..old,
       (
@@ -131,7 +131,7 @@
       )
     ))
     #if daynotes-to-show.len() == 0 or daynotes-to-show.contains(current){
-      block[
+      [
         = Day #daynote-counter.display() #box[#move(dy: -.1em)[:]] #my-date(date)
         
         #if tags != "" {
@@ -142,20 +142,16 @@
         #line(length: 100%, stroke: blue + 0.5pt)
         #v(0.5em)
         #content
+        #if daynotes-to-show.len() != 1 [
+          #pagebreak()
+        ]
       ]
-      // colbreak()
     } else {
-      set heading(outlined: false)
-      box(height: 0pt, clip:true)[
-        #content
-      ]
+      redact(content)
     }
   ]
   if assignment-mode {
-    set heading(outlined: false)
-    box(height: 0pt, clip:true)[#daynote-content]
-    v(-1fr)
-    // box(width: 0pt, height: 0pt, clip:true)[#daynote-content]
+    redact(daynote-content)
   } else {
     daynote-content
   }
@@ -262,7 +258,8 @@
 
   if ref-label != none {
     context{
-      let current = daynote-counter.at(here()).at(0)
+      // let current = daynote-counter.at(here()).at(0)
+      let current = daynote-counter.get().at(0)
       problems-label.update(old => (
         ..old,
         (
@@ -284,7 +281,6 @@
         )
       ))
     }
-    return
   }
 
   if not visible { return }
@@ -309,6 +305,7 @@
             (#emph[#eval(content-label, mode: "markup")])
           ]
           #if show-marks {
+            h(1fr)
             process-marks(marks)
           }
         ]
@@ -359,7 +356,10 @@
         breakable: true,
       )[  
         #content
-        #process-marks(marks)
+        #if show-marks {
+          h(1fr)
+          process-marks(marks)
+        }
       ]
   ]
 
@@ -439,8 +439,9 @@
     }
     #content
     #if marks != none {
-      v(0em)
-      box[#h(1fr)#process-marks(marks)]
+      // v(0em)
+      h(1fr)
+      box[#process-marks(marks)]
     }
   ]
   content-block
@@ -454,7 +455,7 @@
         #v(0.1em)
         #text(size: 10pt)[(#assignment-date.display("[day] [month repr:long], [year]"))]
         #v(0.5em)
-        #text(size: 12pt)[Submission Deadline: ] #text(fill:red, size: 15pt)[#assignment-deadline.display("[day] [month repr:long], [year]")]
+        #text(size: 12pt)[Submission Deadline: ] #text(fill:maroon, size: 12pt)[#assignment-deadline.display("[day] [month repr:long], [year]")]
         #v(0.7em)
         #text(size: 10pt)[Course: #course-name #h(1fr)
         Instructor: #instructor-name]
@@ -471,6 +472,9 @@
 }
 
 #let custom-heading-style(it) = {
+  if assignment-mode{
+    return
+  }
   if it.level >= 2 {
     let daynote-num = daynote-counter.get().at(0)
     let heading-nums = counter(heading).get()
@@ -480,7 +484,7 @@
     
     let heading-text = num-str + " " + body
     heading-text
-
+    
     if daynotes-to-show.len() == 0 or daynotes-to-show.contains(daynote-num){
       show heading: none
       heading(..args, outlined: false, bookmarked: true, numbering: none, heading-text)

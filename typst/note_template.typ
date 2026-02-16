@@ -11,6 +11,9 @@
 
 #set heading(numbering: "1.", bookmarked: false)
 
+// Makes equations break accross pages
+#show math.equation: set block(breakable: true)
+
 // Makes reference colored
 #show ref: it => text(fill: blue, it)
 

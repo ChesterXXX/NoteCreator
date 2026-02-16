@@ -1,3 +1,4 @@
+
 #let my-date(..args) = {
   let date = if args.pos().len() == 0{
     datetime.today()
@@ -138,14 +139,30 @@
     })
     let eval_val = eval(processed)
     if processed != str(eval_val){
-      return [#h(1fr) #eval(marks, mode: "math") = $#eval_val$]
+      return [#eval(marks, mode: "math") = $#eval_val$]
     } else {
-      return [#h(1fr) $#marks$]
+      return [$#marks$]
     }
   }
 }
 
 #let focus(content) = {
   text(fill:purple, style:"italic")[#content]
+}
+
+#let redact(content) = {
+  set heading(outlined: false)
+  show text:none
+  show math.equation:none
+  show box: none
+  show block: none
+  show grid: none
+  show image: none
+  show align: none
+  show v: none
+  show pagebreak: none
+  show colbreak: none
+  content
+  // v(-1fr)
 }
 

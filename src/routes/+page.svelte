@@ -3,6 +3,9 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { open, confirm } from '@tauri-apps/plugin-dialog';
 	import { join } from '@tauri-apps/api/path';
+	import { migrate } from 'svelte/compiler';
+	// import { _ } from '$env/static/private';
+	// import { _ } from '$env/static/private';
 
 	const problemsJson = 'problems.json';
 	const assignmentsJson = 'assignments.json';
@@ -120,6 +123,7 @@
 		creatingNewAssignment = true;
 	};
 
+	// the daynote count starts from 1
 	let daynotes = $state<number[]>([]);
 	let daynoteCount = $state(0);
 
@@ -208,6 +212,7 @@
 
 				daynotes = jsonData.filter((p) => p['ref-label'] == undefined).map((p) => p.daynote);
 				daynoteCount = daynotes.length;
+				daynoteRange = [...Array(daynoteCount)].map((_, i) => i + 1);
 
 				console.log(`Parsed ${jsonData.length} problems across ${daynoteCount} many daynotes!`);
 			} catch (err) {
@@ -468,9 +473,103 @@
 		}
 	};
 
-	const compileDaynotes = async () => {
+	let rangeInput = $state('');
+	let isRangeInputValid = $state(true);
+	let daynoteRange = $state<number[]>([]);
+	let daynoteRangeCount = $derived(daynoteRange.length);
+	const validateRangeInput = (value: string): number[] => {
+		const cleaned = value.replace(/\s/g, '');
+		if (cleaned === '') {
+			isRangeInputValid = true;
+			return [...Array(daynoteCount)].map((_, i) => i + 1);
+		}
+
+		const validPattern = /^[0-9,\-]+$/;
+		if (!validPattern.test(cleaned)) {
+			isRangeInputValid = false;
+			return [];
+		}
+
+		if (
+			cleaned.startsWith(',') ||
+			cleaned.endsWith(',') ||
+			cleaned.includes(',,') ||
+			cleaned.includes('--')
+		) {
+			isRangeInputValid = false;
+			return [];
+		}
+
+		const numberSet = new Set<number>();
+		const parts = cleaned.split(',');
+		for (const part of parts) {
+			if (part === '') continue;
+			if (part.includes('-')) {
+				const partRanges = part.split('-');
+				if (partRanges.length !== 2) {
+					isRangeInputValid = false;
+					return [];
+				}
+				const [start, end] = partRanges;
+				if (!/^\d+$/.test(start) || !/^\d+$/.test(end)) {
+					isRangeInputValid = false;
+					return [];
+				}
+				const startNum = parseInt(start, 10);
+				const endNum = parseInt(end, 10);
+				if (startNum > endNum || endNum > daynoteCount) {
+					isRangeInputValid = false;
+					return [];
+				}
+				for (let i = startNum; i <= endNum; i++) {
+					numberSet.add(i);
+				}
+			} else {
+				if (!/^\d+$/.test(part)) {
+					isRangeInputValid = false;
+					return [];
+				}
+				const num = parseInt(part, 10);
+				if (num > daynoteCount) {
+					isRangeInputValid = false;
+					return [];
+				}
+				numberSet.add(num);
+			}
+		}
+		isRangeInputValid = true;
+		return Array.from(numberSet).sort((a, b) => a - b);
+	};
+
+	const handleRangeInput = (e: Event) => {
+		daynoteRange = validateRangeInput(rangeInput);
+	};
+
+	const compileCombinedDaynote = async () => {
 		compilingDaynotes = true;
-		for (const daynote of daynotes) {
+		let outputFile = `daynote_all.pdf`;
+		try {
+			const args = [
+				`fancy-mode=${fancyMode}`,
+				`show-hints=${showHints}`,
+				`show-proofs=${showProofs}`,
+				`daynotes-to-show=(${daynoteRange.join(',')})`
+			];
+			const result = await invoke('compile_typst', {
+				inputFile: typstFilePath,
+				outputFile: await join(daynotesDir, outputFile),
+				args: args
+			});
+			console.log(`Successfully compiled : ${outputFile} ` + result);
+		} catch (err) {
+			console.error('Error:', err);
+		}
+		compilingDaynotes = false;
+	};
+
+	const compileIndividualDaynotes = async () => {
+		compilingDaynotes = true;
+		for (const daynote of daynoteRange) {
 			currentlyCompilingDaynote = daynote;
 			let outputFile = `daynote${daynote}.pdf`;
 			try {
@@ -711,18 +810,52 @@
 			</div>
 
 			<div class="flex gap-3 mt-6 justify-center">
+				<label for="range-input" class="flex items-center text-sm font-medium text-gray-700 mb-2">
+					Range
+				</label>
+				<input
+					id="range-input"
+					type="text"
+					autocomplete="off"
+					bind:value={rangeInput}
+					oninput={handleRangeInput}
+					disabled={isAnyLoading || !isTypstFilePathSet || !isDaynotesDirSet}
+					placeholder="e.g., 1, 3, 5-7, 8"
+					class={`w-full px-4 py-2 rounded-lg border-2 transition-colors outline-none
+      ${isRangeInputValid ? 'border-gray-300 focus:border-blue-500 bg-white' : 'border-red-500 focus:border-red-600 bg-red-50'}`}
+				/>
 				<button
-					onclick={compileDaynotes}
-					disabled={isAnyLoading || daynoteCount === 0 || !isTypstFilePathSet || !isDaynotesDirSet}
+					onclick={compileIndividualDaynotes}
+					disabled={isAnyLoading ||
+						daynoteRangeCount === 0 ||
+						!isTypstFilePathSet ||
+						!isDaynotesDirSet}
 					class="px-6 py-2 bg-green-500 min-w-60 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 				>
 					{#if compilingDaynotes}
-						Creating {currentlyCompilingDaynote}/{daynoteCount} daynote
-					{:else if daynoteCount > 0}
-						Create {daynoteCount}
-						{daynoteCount > 1 ? 'daynotes' : 'daynote'}
+						Creating {currentlyCompilingDaynote}/{daynoteRangeCount} daynote
+					{:else if daynoteRangeCount > 0}
+						Create {daynoteRangeCount}
+						{daynoteRangeCount > 1 ? 'daynotes' : 'daynote'}
 					{:else}
 						No daynotes to create
+					{/if}
+				</button>
+				<button
+					onclick={compileCombinedDaynote}
+					disabled={isAnyLoading ||
+						daynoteRangeCount === 0 ||
+						daynoteRangeCount === 1 ||
+						!isTypstFilePathSet ||
+						!isDaynotesDirSet}
+					class="px-6 py-2 bg-green-500 min-w-60 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
+				>
+					{#if compilingDaynotes}
+						Compiling daynotes
+					{:else if daynoteRangeCount > 1}
+						Create combined daynote
+					{:else}
+						Nothing to combine
 					{/if}
 				</button>
 			</div>
