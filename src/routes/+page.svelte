@@ -141,14 +141,16 @@
 	let currentlyCompilingAssignment = $state(0);
 
 	let loadingAssignments = $state(false);
-	let compilingDaynotes = $state(false);
+	let compilingIndividualDaynotes = $state(false);
+	let compilingCombinedDaynotes = $state(false);
 	let loadingLabels = $state(false);
 	let editingAssignment = $state(false);
 	let compilingAssignment = $state(false);
 	let compilingAllAssignments = $state(false);
 	const isAnyLoading = $derived(
 		loadingLabels ||
-			compilingDaynotes ||
+			compilingIndividualDaynotes ||
+			compilingCombinedDaynotes ||
 			loadingAssignments ||
 			compilingAssignment ||
 			compilingAllAssignments
@@ -546,7 +548,7 @@
 	};
 
 	const compileCombinedDaynote = async () => {
-		compilingDaynotes = true;
+		compilingCombinedDaynotes = true;
 		let outputFile = `daynote_all.pdf`;
 		try {
 			const args = [
@@ -564,13 +566,13 @@
 		} catch (err) {
 			console.error('Error:', err);
 		}
-		compilingDaynotes = false;
+		compilingCombinedDaynotes = false;
 	};
 
 	const compileIndividualDaynotes = async () => {
-		compilingDaynotes = true;
-		for (const daynote of daynoteRange) {
-			currentlyCompilingDaynote = daynote;
+		compilingIndividualDaynotes = true;
+		for (const [index, daynote] of daynoteRange.entries()) {
+			currentlyCompilingDaynote = index;
 			let outputFile = `daynote${daynote}.pdf`;
 			try {
 				const args = [
@@ -589,7 +591,7 @@
 				console.error('Error:', err);
 			}
 		}
-		compilingDaynotes = false;
+		compilingIndividualDaynotes = false;
 	};
 
 	let showAssignmentCompiledConfirmation = $state(false);
@@ -832,8 +834,10 @@
 						!isDaynotesDirSet}
 					class="px-6 py-2 bg-green-500 min-w-60 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 				>
-					{#if compilingDaynotes}
+					{#if compilingIndividualDaynotes}
 						Creating {currentlyCompilingDaynote}/{daynoteRangeCount} daynote
+					{:else if compilingCombinedDaynotes}
+						Combining daynote
 					{:else if daynoteRangeCount > 0}
 						Create {daynoteRangeCount}
 						{daynoteRangeCount > 1 ? 'daynotes' : 'daynote'}
@@ -850,7 +854,9 @@
 						!isDaynotesDirSet}
 					class="px-6 py-2 bg-green-500 min-w-60 text-white rounded-lg hover:bg-green-600 transition disabled:bg-gray-400"
 				>
-					{#if compilingDaynotes}
+					{#if compilingCombinedDaynotes}
+						Combining daynote
+					{:else if compilingIndividualDaynotes}
 						Compiling daynotes
 					{:else if daynoteRangeCount > 1}
 						Create combined daynote
